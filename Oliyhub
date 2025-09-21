@@ -1,1 +1,610 @@
+local StarterGui = game:GetService("StarterGui")
+local Players = game:GetService("Players")
+local VirtualUser = game:GetService("VirtualUser")
+local RunService = game:GetService("RunService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local RbxAnalyticsService = game:GetService("RbxAnalyticsService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+-- 安全判断：确保LocalPlayer加载完成
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    warn("玩家未加载，脚本终止")
+    return
+end
+
+-- 安全判断：确保CurrentCamera存在
+local CurrentCamera = Workspace.CurrentCamera
+if not CurrentCamera then
+    CurrentCamera = Instance.new("Camera")
+    CurrentCamera.Parent = Workspace
+    Workspace.CurrentCamera = CurrentCamera
+end
+
+-- 1. 初始化通知引导
+StarterGui:SetCore("SendNotification", {
+    Title = "正在初始化",
+    Text = "开始倒计时",
+    Duration = 5,
+})
+wait(2)
+
+local countdownTexts = {"三", "二", "一"}
+for _, text in ipairs(countdownTexts) do
+    StarterGui:SetCore("SendNotification", {
+        Title = "倒计时",
+        Text = text,
+        Duration = 2,  -- 优化：匹配wait时间，避免通知堆积
+    })
+    wait(2)
+end
+
+-- 2. 反挂机功能（Anti-AFK）
+print("Anti Afk On")
+LocalPlayer.Idled:Connect(function()
+    -- 安全判断：确保相机CFrame有效
+    local camCFrame = CurrentCamera.CFrame or CFrame.new()
+    VirtualUser:Button2Down(Vector2.new(0,0), camCFrame)
+    wait(1)
+    VirtualUser:Button2Up(Vector2.new(0,0), camCFrame)
+end)
+
+-- 初始化完成通知
+StarterGui:SetCore("SendNotification", {
+    Title = "反挂机已自动开启",
+    Text = "被踢出服务器的概率已降低",
+    Duration = 5,
+})
+wait(2)
+StarterGui:SetCore("SendNotification", {
+    Title = "启动成功",
+    Text = "您好，" .. LocalPlayer.Name .. "！欢迎使用BP脚本",
+    Duration = 5,
+})
+
+-- 3. 自适应水印模块
+local function createAdaptiveWatermark()
+    -- 移除旧水印（避免重复创建）
+    local oldWatermark = game.CoreGui:FindFirstChild("AUG_Watermark")
+    if oldWatermark then
+        oldWatermark:Destroy()
+    end
+    -- 创建水印UI
+    local watermarkGui = Instance.new("ScreenGui")
+    watermarkGui.Name = "AUG_Watermark"
+    watermarkGui.Parent = game.CoreGui
+    watermarkGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    watermarkGui.ResetOnSpawn = false
+
+    local watermarkText = Instance.new("TextLabel")
+    watermarkText.Name = "WatermarkText"
+    watermarkText.Parent = watermarkGui
+    watermarkText.Text = "BP脚本"
+    watermarkText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    watermarkText.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    watermarkText.TextStrokeTransparency = 0.3
+    watermarkText.Font = Enum.Font.GothamBold
+    watermarkText.BackgroundTransparency = 1
+    watermarkText.AnchorPoint = Vector2.new(1, 0)
+    watermarkText.Position = UDim2.new(1, -10, 0, 10)
+    watermarkText.TextXAlignment = Enum.TextXAlignment.Right
+
+    -- 初始化尺寸（随屏幕自适应）
+    local function updateWatermarkSize()
+        local screenSize = CurrentCamera.ViewportSize
+        watermarkText.TextSize = math.floor(screenSize.Y * 0.02)
+        watermarkText.Size = UDim2.new(0, watermarkText.TextBounds.X + 20, 0, watermarkText.TextBounds.Y + 10)
+    end
+    updateWatermarkSize()
+    -- 监听屏幕尺寸变化，实时更新水印
+    CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateWatermarkSize)
+end
+createAdaptiveWatermark()
+
+-- 4. FPS与时间显示模块
+local LBLG = Instance.new("ScreenGui")
+LBLG.Name = "LBLG"
+LBLG.Parent = game.CoreGui
+LBLG.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+LBLG.Enabled = true
+
+local LBL = Instance.new("TextLabel")
+LBL.Name = "LBL"
+LBL.Parent = LBLG
+LBL.BackgroundTransparency = 1
+LBL.Position = UDim2.new(0.75, 0, 0.010, 0)
+LBL.Size = UDim2.new(0, 133, 0, 30)
+LBL.Font = Enum.Font.GothamSemibold
+LBL.Text = "加载中..."
+LBL.TextColor3 = Color3.new(1, 1, 1)
+LBL.TextScaled = true
+LBL.TextSize = 14
+LBL.TextWrapped = true
+LBL.Visible = true
+
+local FpsLabel = LBL
+local LastIteration, Start
+local FrameUpdateTable = {}
+
+-- 加载通知优化
+StarterGui:SetCore("SendNotification", {Title = "BP脚本", Text = "载入中", Duration = 2})
+wait(3)
+StarterGui:SetCore("SendNotification", {Title = "BP脚本", Text = "功能初始化", Duration = 2})
+wait(2)
+StarterGui:SetCore("SendNotification", {Title = "BP脚本", Text = "1/3 加载完成", Duration = 2})
+wait(2)
+StarterGui:SetCore("SendNotification", {Title = "BP脚本", Text = "载入成功", Duration = 3})
+
+-- 时间与FPS更新函数
+local function HeartbeatUpdate()
+    LastIteration = tick()
+    -- FPS计算逻辑
+    for Index = #FrameUpdateTable, 1, -1 do
+        FrameUpdateTable[Index + 1] = (FrameUpdateTable[Index] >= LastIteration - 1) and FrameUpdateTable[Index] or nil
+    end
+    FrameUpdateTable[1] = LastIteration
+    local CurrentFPS = (tick() - Start >= 1 and #FrameUpdateTable) or (#FrameUpdateTable / (tick() - Start))
+    CurrentFPS = CurrentFPS - CurrentFPS % 1
+    -- 更新显示（包含FPS和时间）
+    local currentTime = os.date("%H时%M分%S秒")
+    FpsLabel.Text = "时间：" .. currentTime .. " | FPS：" .. CurrentFPS
+end
+Start = tick()
+RunService.Heartbeat:Connect(HeartbeatUpdate)
+
+-- 5. 功能UI与信息展示模块
+local win, creds
+-- 加载外部UI（添加安全判断）
+local success, xynbui = pcall(function()
+    return loadstring(game:HttpGet("https://raw.githubusercontent.com/xcmsnd/QQ515966991/refs/heads/main/Ware_UI%20AL%E9%AB%98%E4%BB%BFV1.0.lua"))()
+end)
+if not success then
+    StarterGui:SetCore("SendNotification", {Title = "错误", Text = "UI脚本加载失败！", Duration = 5})
+    warn("UI加载失败：" .. tostring(xynbui))
+else
+    -- 创建UI窗口
+    win = xynbui:new("BP脚本")
+    -- 修复：确保creds变量正确定义（适配外部UI）
+    creds = win:Tab("功能控制", "16060333448")  -- 新增功能控制标签页
+
+    -- 信息标签页
+    local UITab1 = win:Tab("信息", "16060333448")
+    local aboutSection1 = UITab1:section("作者信息", false)
+    aboutSection1:Label("OliyOvO制作")
+    aboutSection1:Label("更新吃作者")
+    aboutSection1:Label("忠爱Lutzauto")
+    aboutSection1:Label("半缝合")
+    aboutSection1:Label("谁敢圈钱我给你码杀了")
+    aboutSection1:Label("感谢游玩")
+
+    -- 作者感谢与用户信息标签页
+    local UITab2 = win:Tab("作者的感谢", "16060333448")
+    local aboutSection2 = UITab2:section("作者的感谢", false)
+    aboutSection2:Label("Lutzauto我爱你")
+
+    local aboutSection3 = UITab2:section("你的信息", false)
+    -- 安全判断：注入器名称
+    local executorName = typeof(identifyexecutor) == "function" and identifyexecutor() or "未知注入器"
+    -- 安全判断：角色信息
+    local characterName = LocalPlayer.Character and LocalPlayer.Character.Name or "角色未加载"
+    -- 安全判断：服务器信息
+    local placeName = ""
+    local successPlace, placeInfo = pcall(function()
+        return MarketplaceService:GetProductInfo(game.PlaceId)
+    end)
+    if successPlace then
+        placeName = placeInfo.Name
+    else
+        placeName = "未知服务器"
+    end
+
+    aboutSection3:Label("你的注入器：" .. executorName)
+    aboutSection3:Label("你的账号年龄：" .. LocalPlayer.AccountAge .. "天")
+    aboutSection3:Label("你的角色名：" .. characterName)
+    aboutSection3:Label("当前服务器名称：" .. placeName)
+    aboutSection3:Label("当前服务器ID：" .. tostring(game.GameId))
+    aboutSection3:Label("你的用户ID：" .. LocalPlayer.UserId)
+    aboutSection3:Label("客户端ID：" .. RbxAnalyticsService:GetClientId())
+
+    -- 脚本控制功能
+    aboutSection3:Toggle("脚本框架变小一点", "", false, function(state)
+        local frostyUI = game.CoreGui:FindFirstChild("frosty")
+        if frostyUI and frostyUI:FindFirstChild("Main") then
+            frostyUI.Main.Style = state and "DropShadow" or "Custom"
+        end
+    end)
+    aboutSection3:Button("关闭脚本", function()
+        -- 销毁所有脚本创建的UI
+        local uiList = {"frosty", "AUG_Watermark", "LBLG"}
+        for _, uiName in ipairs(uiList) do
+            local ui = game.CoreGui:FindFirstChild(uiName)
+            if ui then
+                ui:Destroy()
+            end
+        end
+        -- 停止所有自动功能
+        autoswing = false
+        autosell = false
+        autosellmax = false
+        autobuybelts = false
+        autobuyranks = false
+        autobuyskill = false
+        autobuybelts = false
+        autobuyranks = false
+        autobuyshurikens = false
+        StarterGui:SetCore("SendNotification", {Title = "脚本已关闭", Text = "所有功能已停止", Duration = 3})
+    end)
+    aboutSection3:Label("BP脚本")
+    aboutSection3:Label("作者QQ：1622103455")
+    aboutSection3:Button("点击复制作者QQ群", function()
+        setclipboard("7734068321")  -- 修正群号位数
+        StarterGui:SetCore("SendNotification", {Title = "复制成功", Text = "QQ群号已复制到剪贴板", Duration = 3})
+    end)
+
+    -- 6. 自动操作功能模块（统一用creds标签页管理）
+    local autoSection = creds:section("自动操作", true)
+
+    -- 自动挥舞
+    local autoswing = false
+    local function swinging()
+        spawn(function()
+            while autoswing do
+                task.wait()
+                -- 安全判断：事件存在性
+                local ninjaEvent = LocalPlayer:FindFirstChild("ninjaEvent")
+                if ninjaEvent then
+                    ninjaEvent:FireServer("swingKatana")
+                else
+                    warn("ninjaEvent不存在，自动挥舞停止")
+                    autoswing = false
+                    break
+                end
+            end
+        end)
+    end
+    autoSection:Toggle("自动挥舞", "ATHW", false, function(state)
+        autoswing = state
+        if state then
+            swinging()
+            StarterGui:SetCore("SendNotification", {Title = "自动挥舞", Text = "已开启", Duration = 2})
+        else
+            StarterGui:SetCore("SendNotification", {Title = "自动挥舞", Text = "已关闭", Duration = 2})
+        end
+    end)
+
+    -- 自动售卖
+    local autosell = false
+    local function selling()
+        spawn(function()
+            while autosell do
+                task.wait(0.1)
+                -- 安全判断：角色和售卖区域存在
+                local character = LocalPlayer.Character
+                local sellCircle = Workspace:FindFirstChild("sellAreaCircles") and Workspace.sellAreaCircles:FindFirstChild("sellAreaCircle7")
+                if character and sellCircle and sellCircle:FindFirstChild("circleInner") then
+                    local rootPart = character:FindFirstChild("HumanoidRootPart")
+                    local part = Workspace:FindFirstChild("Part")
+                    if rootPart and part then
+                        sellCircle.circleInner.CFrame = rootPart.CFrame
+                        task.wait(0.1)
+                        sellCircle.circleInner.CFrame = part.CFrame
+                    end
+                else
+                    warn("角色或售卖区域不存在，自动售卖停止")
+                    autosell = false
+                    break
+                end
+            end
+        end)
+    end
+    autoSection:Toggle("自动售卖", "ATSELL", false, function(state)
+        autosell = state
+        if state then
+            selling()
+            StarterGui:SetCore("SendNotification", {Title = "自动售卖", Text = "已开启", Duration = 2})
+        else
+            StarterGui:SetCore("SendNotification", {Title = "自动售卖", Text = "已关闭", Duration = 2})
+        end
+    end)
+
+    -- 最大售卖
+    local autosellmax = false
+    local function maxsell()
+        spawn(function()
+            while autosellmax do
+                task.wait()
+                -- 安全判断：角色、售卖区域、UI存在
+                local character = LocalPlayer.Character
+                local sellCircle = Workspace:FindFirstChild("sellAreaCircles") and Workspace.sellAreaCircles:FindFirstChild("sellAreaCircle7")
+                local maxMenu = LocalPlayer.PlayerGui:FindFirstChild("gameGui") and LocalPlayer.PlayerGui.gameGui:FindFirstChild("maxNinjitsuMenu")
+                if character and sellCircle and sellCircle.circleInner and maxMenu and maxMenu.Visible then
+                    local rootPart = character:FindFirstChild("HumanoidRootPart")
+                    local part = Workspace:FindFirstChild("Part")
+                    if rootPart and part then
+                        sellCircle.circleInner.CFrame = rootPart.CFrame
+                        task.wait()
+                        sellCircle.circleInner.CFrame = part.CFrame
+                    end
+                else
+                    warn("角色、售卖区域或UI不存在，最大售卖停止")
+                    autosellmax = false
+                    break
+                end
+            end
+        end)
+    end
+    autoSection:Toggle("最大售卖", "ATSELMAX", false, function(state)
+        autosellmax = state
+        if state then
+            maxsell()
+            StarterGui:SetCore("SendNotification", {Title = "最大售卖", Text = "已开启", Duration = 2})
+        else
+            StarterGui:SetCore("SendNotification", {Title = "最大售卖", Text = "已关闭", Duration = 2})
+        end
+    end)
+
+    -- 自动购买剑
+    local autobuybelts = false
+    local function buybelts()
+        spawn(function()
+            while autobuybelts do
+                task.wait()
+                -- 安全判断：角色和事件存在
+                local character = LocalPlayer.Character
+                local ninjaEvent = LocalPlayer:FindFirstChild("ninjaEvent")
+                if character and ninjaEvent and character:FindFirstChild("HumanoidRootPart") then
+                    local oh1 = "buyAllBelts"
+                    local oh2 = {
+                        "Ground", "Astral Island", "Space Island", "Tundra Island", "Eternal Island",
+                        "Sandstorm", "Thunderstorm", "Ancient Inferno Island", "Midnight Shadow Island",
+                        "Mythical Souls Island", "Winter Wonder Island"
+                    }
+                    for _, island in ipairs(oh2) do
+                        ninjaEvent:FireServer(oh1, island)
+                        task.wait(0.1)  -- 降低请求频率，避免被检测
+检测
+                    end
+                else
+                    warn("角色或事件不存在，自动买腰带停止")
+                    autobuybelts = false
+                    break
+                end
+            end
+        end)
+    end
+    autoSection:Toggle("自动买腰带", "ATBYD", false, function(state)
+        autobuybelts = state
+        if state then
+            buybelts()
+            StarterGui:SetCore("SendNotification", {Title = "自动买腰带", Text = "已开启", Duration = 2})
+        else
+            StarterGui:SetCore("SendNotification", {Title = "自动买腰带", Text = "已关闭", Duration = 2})
+        end
+    end)
+
+    -- 自动购买排名
+    local autobuyranks = false
+    local function buyranks()
+        spawn(function()
+            while autobuyranks do
+                task.wait()
+                -- 安全判断：角色、事件、排名列表存在
+                local character = LocalPlayer.Character
+                local ninjaEvent = LocalPlayer:FindFirstChild("ninjaEvent")
+                local ranksFolder = ReplicatedStorage:FindFirstChild("Ranks") and ReplicatedStorage.Ranks:FindFirstChild("Ground")
+                if character and ninjaEvent and ranksFolder and character:FindFirstChild("HumanoidRootPart") then
+                    local oh1 = "buyRank"
+                    local ranks = ranksFolder:GetChildren()
+                    for _, rank in ipairs(ranks) do
+                        ninjaEvent:FireServer(oh1, rank.Name)
+                        task.wait(0.1)
+                    end
+                else
+                    warn("角色、事件或排名列表不存在，自动买排名停止")
+                    autobuyranks = false
+                    break
+                end
+            end
+        end)
+    end
+    autoSection:Toggle("自动买排名", "ATBP", false, function(state)
+        autobuyranks = state
+        if state then
+            buyranks()
+            StarterGui:SetCore("SendNotification", {Title = "自动买排名", Text = "已开启", Duration = 2})
+        else
+            StarterGui:SetCore("SendNotification", {Title = "自动买排名", Text = "已关闭", Duration = 2})
+        end
+    end)
+
+    -- 自动购买技能
+    local autobuyskill = false
+    local function buyskill()
+        spawn(function()
+            while autobuyskill do
+                task.wait()
+                -- 安全判断：角色和事件存在
+                local character = LocalPlayer.Character
+                local ninjaEvent = LocalPlayer:FindFirstChild("ninjaEvent")
+                if character and ninjaEvent and character:FindFirstChild("HumanoidRootPart") then
+                    local oh1 = "buyAllSkills"
+                    local oh2 = {
+                        "Ground", "Astral Island", "Space Island", "Tundra Island", "Eternal Island",
+                        "Sandstorm", "Thunderstorm", "Ancient Inferno Island", "Midnight Shadow Island",
+                        "Mythical Souls Island", "Winter Wonder Island"
+                    }
+                    for _, island in ipairs(oh2) do
+                        ninjaEvent:FireServer(oh1, island)
+                        task.wait(0.1)
+                    end
+                else
+                    warn("角色或事件不存在，自动买技能停止")
+                    autobuyskill = false
+                    break
+                end
+            end
+        end)
+    end
+    autoSection:Toggle("自动买技能", "ATB", false, function(state)
+        autobuyskill = state
+        if state then
+            buyskill()
+            StarterGui:SetCore("SendNotification", {Title = "自动买技能", Text = "已开启", Duration = 2})
+        else
+            StarterGui:SetCore("SendNotification", {Title = "自动买技能", Text = "已关闭", Duration = 2})
+        end
+    end)
+
+    -- 自动购买剑
+    local autobuybelts = false
+    local function buybelts()
+        spawn(function()
+            while autobuybelts do
+                task.wait()
+                -- 安全判断：角色和事件存在
+                local character = LocalPlayer.Character
+                local ninjaEvent = LocalPlayer:FindFirstChild("ninjaEvent")
+                if character and ninjaEvent and character:FindFirstChild("HumanoidRootPart") then
+                    local oh1 = "buyAllBelts"
+                    local oh2 = {
+                        "Ground", "Astral Island", "Space Island", "Tundra Island", "Eternal Island",
+                        "Sandstorm", "Thunderstorm", "Ancient Inferno Island", "Midnight Shadow Island",
+                        "Mythical Souls Island", "Winter Wonder Island"
+                    }
+                    for _, island in ipairs(oh2) do
+                        ninjaEvent:FireServer(oh1, island)
+                        task.wait(0.1)
+                    end
+                else
+                    warn("角色或事件不存在，自动买腰带停止")
+                    autobuybelts = false
+                    break
+                end
+            end
+        end)
+    end
+    autoSection:Toggle("自动买腰带", "ATBYD", false, function(state)
+        autobuybelts = state
+        if state then
+            buybelts()
+            StarterGui:SetCore("SendNotification", {Title = "自动买腰带", Text = "已开启", Duration = 2})
+        else
+            StarterGui:SetCore("SendNotification", {Title = "自动买腰带", Text = "已关闭", Duration = 2})
+        end
+    end)
+
+    -- 自动购买手里剑
+    local autobuyshurikens = false
+    local function buyshurikens()
+        spawn(function()
+            while autobuyshurikens do
+                task.wait()
+                -- 安全判断：角色和事件存在
+                local character = LocalPlayer.Character
+                local ninjaEvent = LocalPlayer:FindFirstChild("ninjaEvent")
+                if character and ninjaEvent and character:FindFirstChild("HumanoidRootPart") then
+                    local oh1 = "buyAllShurikens"
+                    local oh2 = {
+                        "Ground", "Astral Island", "Space Island", "Tundra Island", "Eternal Island",
+                        "Sandstorm", "Thunderstorm", "Ancient Inferno Island", "Midnight Shadow Island",
+                        "Mythical Souls Island", "Winter Wonder Island"
+                    }
+                    for _, island in ipairs(oh2) do
+                        ninjaEvent:FireServer(oh1, island)
+                        task.wait(0.1)
+                    end
+                else
+                    warn("角色或事件不存在，自动买手里剑停止")
+                    autobuyshurikens = false
+                    break
+                end
+            end
+        end)
+    end
+    autoSection:Toggle("自动买手里剑", "ATBSK", false, function(state)
+        autobuyshurikens = state
+        if state then
+            buyshurikens()
+            StarterGui:SetCore("SendNotification", {Title = "自动买手里剑", Text = "已开启", Duration = 2})
+        else
+            StarterGui:SetCore("SendNotification", {Title = "自动买手里剑", Text = "已关闭", Duration = 2})
+        end
+    end)
+
+    -- 7. 传送功能模块
+    local teleportSection = creds:section("传送功能", true)
+
+    -- 解锁所有岛
+    teleportSection:Button("解锁所有岛", function()
+        local islandParts = Workspace:FindFirstChild("islandUnlockParts")
+        if not islandParts then
+            StarterGui:SetCore("SendNotification", {Title = "错误", Text = "岛屿解锁区域不存在", Duration = 3})
+            return
+        end
+        StarterGui:SetCore("SendNotification", {Title = "解锁中", Text = "开始解锁所有岛屿", Duration = 3})
+        for _, v in ipairs(islandParts:GetChildren()) do
+            local signPart = v:FindFirstChild("islandSignPart")
+            local character = LocalPlayer.Character
+            if signPart and character and character:FindFirstChild("HumanoidRootPart") then
+                character.HumanoidRootPart.CFrame = signPart.CFrame
+                wait(0.5)
+            end
+        end
+        StarterGui:SetCore("SendNotification", {Title = "解锁完成", Text = "所有岛屿已尝试解锁", Duration = 3})
+    end)
+
+    -- 传送按钮（移除重复项，统一格式）
+    local teleportPoints = {
+        {"出生点", CFrame.new(25.665502548217773, 3.4228405952453613, 29.919952392578125)},
+        {"附魔岛", CFrame.new(51.17238235473633, 766.1807861328125, -138.44842529296875)},
+        {"神秘岛", CFrame.new(171.97178649902344, 4047.380859375, 42.0699577331543)},
+        {"太空岛", CFrame.new(148.83824157714844, 5657.18505859375, 73.5014877319336)},
+        {"冻土岛", CFrame.new(139.28330993652344, 9285.18359375, 77.36406707763672)},
+        {"永恒岛", CFrame.new(149.34817504882812, 13680.037109375, 73.3861312866211)},
+        {"沙暴岛", CFrame.new(133.37144470214844, 17686.328125, 72.00334167480469)},
+        {"雷暴岛", CFrame.new(143.19349670410156, 24070.021484375, 78.05432891845703)},
+        {"远古炼狱岛", CFrame.new(141.27163696289062, 28256.294921875, 69.3790283203125)},
+        {"午夜暗影岛", CFrame.new(132.74267578125, 33206.98046875, 57.495574951171875)},
+        {"神秘灵魂岛", CFrame.new(137.76148986816406, 39317.5703125, 61.06639862060547)},
+        {"冬季奇迹岛", CFrame.new(137.2720184326172, 46010.5546875, 55.941951751708984)},
+        {"黄金大师岛", CFrame.new(128.32339477539062, 52607.765625, 56.69411849975586)},
+        {"龙传奇岛", CFrame.new(146.35226440429688, 59594.6796875, 77.53300476074219)},
+        {"赛博传奇岛", CFrame.new(137.3321075439453, 66669.1640625, 72.21722412109375)},
+        {"天岚超能岛", CFrame.new(135.48077392578125, 70271.15625, 57.02311325073242)},
+        {"混沌传奇岛", CFrame.new(148.58590698242188, 74442.8515625, 69.3177719116211)},
+        {"灵魂融合岛", CFrame.new(136.9700927734375, 79746.984375, 58.54051971435547)},
+        {"黑暗元素岛", CFrame.new(141.697265625, 83198.984375, 72.73107147216797)},
+        {"内心和平岛", CFrame.new(135.3157501220703, 87051.0625, 66.78429412841797)},
+        {"炽烈漩涡岛", CFrame.new(135.08216857910156, 91246.0703125, 69.56692504882812)},
+        {"35倍金币区域", CFrame.new(86.2938232421875, 91245.765625, 120.54232788085938)},
+        {"死亡宠物", CFrame.new(4593.21337890625, 130.87181091308594, 1430.2239990234375)}
+    }
+
+    -- 批量创建传送按钮
+    for _, point in ipairs(teleportPoints) do
+        local name, cframe = point[1], point[2]
+        teleportSection:Button("传送到" .. name, function()
+            local character = LocalPlayer.Character
+            if not character then
+                StarterGui:SetCore("SendNotification", {Title = "错误", Text = "角色未加载", Duration = 3})
+                return
+            end
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            if not rootPart then
+                StarterGui:SetCore("SendNotification", {Title = "错误", Text = "角色根部件不存在", Duration = 3})
+                return
+            end
+            rootPart.CFrame = cframe
+            StarterGui:SetCore("SendNotification", {Title = "传送成功", Text = "已传送到" .. name, Duration = 2})
+        end)
+    end
+end
+
+-- 脚本加载完成最终通知
+StarterGui:SetCore("SendNotification", {
+    Title = "脚本就绪",
+    Text = "所有功能已初始化，可在UI中操作",
+    Duration = 5,
+})
 
